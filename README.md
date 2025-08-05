@@ -13,3 +13,4 @@ Rust 嵌入式开发
 
 ## 项目示例
 - `led-pwm`：使用 PWM 控制 LED 呼吸灯效果。
+- `blinky-embassy`：使用 embassy 框架控制 LED 闪烁效果。
