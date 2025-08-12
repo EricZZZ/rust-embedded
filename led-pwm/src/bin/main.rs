@@ -7,7 +7,7 @@ use esp_hal::ledc::channel::ChannelIFace;
 use esp_hal::ledc::timer::TimerIFace;
 use esp_hal::ledc::{channel, timer, LSGlobalClkSource, Ledc, LowSpeed};
 use esp_hal::main;
-use esp_hal::time::{Duration, Instant, Rate};
+use esp_hal::time::Rate;
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
@@ -53,9 +53,4 @@ fn main() -> ! {
         // blocking_delay(Duration::from_millis(1000));
         led2.toggle();
     }
-}
-
-fn blocking_delay(duration: Duration) {
-    let delay_start = Instant::now();
-    while delay_start.elapsed() < duration {}
 }

@@ -1,11 +1,7 @@
 #![no_std]
 #![no_main]
 
-use buzzer_song::{
-    music::{self, Song},
-    pink_panther,
-};
-
+use esp_hal::ledc::LowSpeed;
 use esp_hal::{
     clock::CpuClock,
     ledc::{
@@ -16,10 +12,6 @@ use esp_hal::{
     time::Rate,
 };
 use esp_hal::{ledc::timer, main};
-use esp_hal::{
-    ledc::LowSpeed,
-    time::{Duration, Instant},
-};
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
@@ -66,9 +58,4 @@ fn main() -> ! {
         channel0.start_duty_fade(100, 0, 1000).unwrap();
         while channel0.is_duty_fade_running() {}
     }
-}
-
-fn blocking_delay(duration: Duration) {
-    let delay_start = Instant::now();
-    while delay_start.elapsed() < duration {}
 }
