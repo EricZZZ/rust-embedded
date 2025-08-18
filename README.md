@@ -12,6 +12,7 @@ Rust 嵌入式开发
 使用芯片：ESP32-C3，[ESP32C3-CORE 开发板](https://wiki.luatos.com/chips/esp32c3/board.html)
 
 ## 项目示例
+### no_std 环境
 - `hello-world`：最简单的 Rust 嵌入式程序，输出 "Hello, world!"。
 - `active-buzzer`: 控制蜂鸣器。
 - `led-pwm`：使用 PWM 控制 LED 呼吸灯效果。
@@ -19,6 +20,10 @@ Rust 嵌入式开发
 - `button`：使用按钮控制 LED 闪烁效果。(循环检测)
 - `button-interrupt`：使用按钮中断控制 LED 闪烁效果。（中断触发）
 - `http-client`：使用 HTTP 客户端发送请求。
+- `oled-spi`：使用 SPI 接口驱动 OLED 屏幕。
+
+### std 环境
+
 
 ## 使用到的电子元件
 ### 面包板
