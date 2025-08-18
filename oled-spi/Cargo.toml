@@ -27,6 +27,8 @@ static_cell = "2.1.1"
 ssd1306 = { version = "0.10.0", features = ["async"] }
 embedded-graphics = "0.8.1"
 embedded-hal-bus = "0.3.0"
+tinybmp = "0.6.0"
+heapless = "0.7.16"
 
 
 [profile.dev]
