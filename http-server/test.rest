@@ -1,0 +1,15 @@
+@baseURL = http://192.168.1.7
+
+# GET /led/status
+GET {{baseURL}}/led/status
+
+### POST /led/on 
+POST {{baseURL}}/led/on
+Content-Type: application/json
+
+{}
+### POST /led/off
+POST {{baseURL}}/led/off
+Content-Type: application/json
+
+{}
