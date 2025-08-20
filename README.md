@@ -11,7 +11,7 @@ Rust 嵌入式开发
 
 ESP32-C3
 
-项目使用的是[ESP32C3-CORE 开发板](https://wiki.luatos.com/chips/esp32c3/board.html)
+项目使用的是 [ESP32C3-CORE 开发板](https://wiki.luatos.com/chips/esp32c3/board.html)
 
 ![ESP32C3-CORE 开发板 引脚图](./imgs/ESP32-C3-CORE.png)
 
@@ -38,7 +38,7 @@ ESP32-C3
 - `active-buzzer`: 控制蜂鸣器。
 - `led-pwm`：使用 PWM 控制 LED 呼吸灯效果。
 - `blinky-embassy`：控制 LED 闪烁效果。
-- `button`：使用按钮控制 LED 闪烁效果。(循环检测)
+- `button`：使用按钮控制 LED 闪烁效果。（循环检测）
 - `button-interrupt`：使用按钮中断控制 LED 闪烁效果。（中断触发）
 - `http-client`：使用 HTTP 客户端发送请求。
 - `oled-spi`：使用 SPI 接口驱动 OLED 屏幕。
@@ -48,6 +48,7 @@ ESP32-C3
 - `hello-world-std`：最简单的 Rust 嵌入式程序，输出 "Hello, world!"。
 - `http-client-std`：编写小型客户端，通过 HTTP，HTTPS 连接到互联网获取数据。
 - `wifi`：使用 ESP32-C3 芯片的 Wi-Fi 功能。
+- `http-server`：使用 ESP32-C3 芯片启动一个本地服务器，用于控制 LED 的开关，并显示状态。
 
 ## 使用到的电子元件
 
