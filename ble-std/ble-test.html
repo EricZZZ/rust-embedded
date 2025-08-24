@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 BLE 测试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            border-radius: 4px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+        }
+        input[type="text"] {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ESP32 BLE GATT 服务器测试</h1>
+        
+        <div class="section">
+            <h2>连接状态</h2>
+            <div id="connectionStatus" class="status disconnected">未连接</div>
+            <button id="connectBtn" onclick="connect()">连接设备</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>断开连接</button>
+        </div>
+
+        <div class="section">
+            <h2>静态特征值 (只读)</h2>
+            <button id="readStaticBtn" onclick="readStaticCharacteristic()" disabled>读取静态值</button>
+            <div id="staticValue">未读取</div>
+        </div>
+
+        <div class="section">
+            <h2>通知特征值</h2>
+            <button id="startNotifyBtn" onclick="startNotifications()" disabled>开始通知</button>
+            <button id="stopNotifyBtn" onclick="stopNotifications()" disabled>停止通知</button>
+            <div id="notifyValue">等待通知...</div>
+        </div>
+
+        <div class="section">
+            <h2>可写特征值</h2>
+            <input type="text" id="writeInput" placeholder="输入要写入的值" disabled>
+            <button id="writeBtn" onclick="writeCharacteristic()" disabled>写入</button>
+            <div id="writeStatus">就绪</div>
+        </div>
+
+        <div class="section">
+            <h2>日志</h2>
+            <div class="log" id="log"></div>
+        </div>
+    </div>
+
+    <script>
+        const SERVICE_UUID = 'fafafafa-fafa-fafa-fafa-fafafafafafa';
+        const STATIC_CHARACTERISTIC_UUID = 'd4e0e0d0-1a2b-11e9-ab14-d663bd873d93';
+        const NOTIFY_CHARACTERISTIC_UUID = 'a3c87500-8ed3-4bdf-8a39-a01bebede295';
+        const WRITABLE_CHARACTERISTIC_UUID = '3c9a3f00-8ed3-4bdf-8a39-a01bebede295';
+
+        let device = null;
+        let server = null;
+        let service = null;
+        let staticCharacteristic = null;
+        let notifyCharacteristic = null;
+        let writableCharacteristic = null;
+        let notifyInterval = null;
+
+        function log(message) {
+            const logElement = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logElement.appendChild(logEntry);
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function updateConnectionStatus(connected) {
+            const statusElement = document.getElementById('connectionStatus');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            
+            if (connected) {
+                statusElement.textContent = '已连接';
+                statusElement.className = 'status connected';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                
+                // 启用所有功能按钮
+                document.getElementById('readStaticBtn').disabled = false;
+                document.getElementById('startNotifyBtn').disabled = false;
+                document.getElementById('writeInput').disabled = false;
+                document.getElementById('writeBtn').disabled = false;
+            } else {
+                statusElement.textContent = '未连接';
+                statusElement.className = 'status disconnected';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                
+                // 禁用所有功能按钮
+                document.getElementById('readStaticBtn').disabled = true;
+                document.getElementById('startNotifyBtn').disabled = true;
+                document.getElementById('stopNotifyBtn').disabled = true;
+                document.getElementById('writeInput').disabled = true;
+                document.getElementById('writeBtn').disabled = true;
+                
+                // 停止通知
+                if (notifyInterval) {
+                    clearInterval(notifyInterval);
+                    notifyInterval = null;
+                }
+            }
+        }
+
+        async function connect() {
+            try {
+                log('正在扫描设备...');
+                
+                device = await navigator.bluetooth.requestDevice({
+                    filters: [
+                        { name: 'ESP32-GATT-Server' },
+                        { services: [SERVICE_UUID] }
+                    ],
+                    optionalServices: [SERVICE_UUID]
+                });
+
+                log(`找到设备: ${device.name}`);
+                log('正在连接GATT服务器...');
+                
+                server = await device.gatt.connect();
+                log('已连接到GATT服务器');
+
+                log('正在获取服务...');
+                service = await server.getPrimaryService(SERVICE_UUID);
+                log('已获取服务');
+
+                // 获取所有特征
+                log('正在获取特征...');
+                staticCharacteristic = await service.getCharacteristic(STATIC_CHARACTERISTIC_UUID);
+                notifyCharacteristic = await service.getCharacteristic(NOTIFY_CHARACTERISTIC_UUID);
+                writableCharacteristic = await service.getCharacteristic(WRITABLE_CHARACTERISTIC_UUID);
+                log('已获取所有特征');
+
+                updateConnectionStatus(true);
+                log('连接完成，可以开始测试');
+
+            } catch (error) {
+                log(`连接错误: ${error}`);
+                console.error('Connection error:', error);
+            }
+        }
+
+        function disconnect() {
+            if (device && device.gatt.connected) {
+                log('正在断开连接...');
+                device.gatt.disconnect();
+                log('已断开连接');
+            }
+            updateConnectionStatus(false);
+        }
+
+        async function readStaticCharacteristic() {
+            try {
+                log('正在读取静态特征值...');
+                const value = await staticCharacteristic.readValue();
+                const decoder = new TextDecoder();
+                const text = decoder.decode(value);
+                
+                document.getElementById('staticValue').textContent = text;
+                log(`读取到静态值: ${text}`);
+                
+            } catch (error) {
+                log(`读取静态特征值错误: ${error}`);
+                console.error('Read error:', error);
+            }
+        }
+
+        async function startNotifications() {
+            try {
+                log('正在启动通知...');
+                
+                await notifyCharacteristic.startNotifications();
+                log('通知已启动');
+                
+                notifyCharacteristic.addEventListener('characteristicvaluechanged', 
+                    handleNotifications);
+                
+                document.getElementById('startNotifyBtn').disabled = true;
+                document.getElementById('stopNotifyBtn').disabled = false;
+                
+            } catch (error) {
+                log(`启动通知错误: ${error}`);
+                console.error('Notification error:', error);
+            }
+        }
+
+        function handleNotifications(event) {
+            const value = event.target.value;
+            const decoder = new TextDecoder();
+            const text = decoder.decode(value);
+            
+            document.getElementById('notifyValue').textContent = text;
+            log(`收到通知: ${text}`);
+        }
+
+        function stopNotifications() {
+            try {
+                notifyCharacteristic.stopNotifications();
+                notifyCharacteristic.removeEventListener('characteristicvaluechanged', 
+                    handleNotifications);
+                
+                log('通知已停止');
+                document.getElementById('startNotifyBtn').disabled = false;
+                document.getElementById('stopNotifyBtn').disabled = true;
+                document.getElementById('notifyValue').textContent = '等待通知...';
+                
+            } catch (error) {
+                log(`停止通知错误: ${error}`);
+                console.error('Stop notification error:', error);
+            }
+        }
+
+        async function writeCharacteristic() {
+            const input = document.getElementById('writeInput');
+            const text = input.value.trim();
+            
+            if (!text) {
+                log('请输入要写入的值');
+                return;
+            }
+
+            try {
+                log(`正在写入: ${text}`);
+                const encoder = new TextEncoder();
+                const value = encoder.encode(text);
+                
+                await writableCharacteristic.writeValue(value);
+                log('写入成功');
+                
+                document.getElementById('writeStatus').textContent = '写入成功';
+                input.value = '';
+                
+            } catch (error) {
+                log(`写入错误: ${error}`);
+                document.getElementById('writeStatus').textContent = '写入失败';
+                console.error('Write error:', error);
+            }
+        }
+
+        // 监听设备断开连接
+        navigator.bluetooth.addEventListener('disconnect', (event) => {
+            log(`设备断开连接: ${event.device.name}`);
+            updateConnectionStatus(false);
+        });
+
+        log('页面加载完成，点击"连接设备"开始测试');
+    </script>
+</body>
+</html>

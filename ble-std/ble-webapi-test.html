@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Bluetooth API Test for ESP32 GATT Server</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: auto;
+        }
+        .characteristic {
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .characteristic h3 {
+            margin-top: 0;
+        }
+        button {
+            padding: 8px 15px;
+            margin: 5px;
+            border: none;
+            border-radius: 3px;
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        input[type="text"] {
+            padding: 5px;
+            width: 200px;
+        }
+        #log {
+            white-space: pre-wrap;
+            background-color: #f5f5f5;
+            border: 1px solid #ddd;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Web Bluetooth API Test for ESP32 GATT Server</h1>
+    <p>This page uses the Web Bluetooth API to connect to the ESP32 GATT server running the <code>ble-std</code> example.</p>
+
+    <button id="connectButton">Connect to ESP32</button>
+    <button id="disconnectButton" disabled>Disconnect</button>
+
+    <div id="characteristics" style="display: none;">
+        <div class="characteristic">
+            <h3>Static Characteristic (Read)</h3>
+            <p>UUID: d4e0e0d0-1a2b-11e9-ab14-d663bd873d93</p>
+            <button id="readStaticButton">Read Value</button>
+            <p>Value: <span id="staticValue">Not read yet</span></p>
+        </div>
+
+        <div class="characteristic">
+            <h3>Notifying Characteristic (Read + Notify)</h3>
+            <p>UUID: a3c87500-8ed3-4bdf-8a39-a01bebede295</p>
+            <button id="readNotifyButton">Read Value</button>
+            <button id="startNotifyButton">Start Notifications</button>
+            <button id="stopNotifyButton" disabled>Stop Notifications</button>
+            <p>Latest Value: <span id="notifyValue">Not read yet</span></p>
+        </div>
+
+        <div class="characteristic">
+            <h3>Writable Characteristic (Read + Write)</h3>
+            <p>UUID: 3c9a3f00-8ed3-4bdf-8a39-a01bebede295</p>
+            <button id="readWriteButton">Read Value</button>
+            <input type="text" id="writeValueInput" placeholder="Enter value to write">
+            <button id="writeButton">Write Value</button>
+            <p>Current Value: <span id="writeValue">Not read yet</span></p>
+        </div>
+    </div>
+
+    <div id="log"></div>
+
+    <script>
+        const logElement = document.getElementById('log');
+        const connectButton = document.getElementById('connectButton');
+        const disconnectButton = document.getElementById('disconnectButton');
+        const characteristicsDiv = document.getElementById('characteristics');
+
+        const readStaticButton = document.getElementById('readStaticButton');
+        const readNotifyButton = document.getElementById('readNotifyButton');
+        const readWriteButton = document.getElementById('readWriteButton');
+        const startNotifyButton = document.getElementById('startNotifyButton');
+        const stopNotifyButton = document.getElementById('stopNotifyButton');
+        const writeButton = document.getElementById('writeButton');
+
+        const staticValueSpan = document.getElementById('staticValue');
+        const notifyValueSpan = document.getElementById('notifyValue');
+        const writeValueSpan = document.getElementById('writeValue');
+        const writeValueInput = document.getElementById('writeValueInput');
+
+        let device, server, service;
+        const SERVICE_UUID = 'fafafafa-fafa-fafa-fafa-fafafafafafa';
+        const STATIC_CHAR_UUID = 'd4e0e0d0-1a2b-11e9-ab14-d663bd873d93';
+        const NOTIFY_CHAR_UUID = 'a3c87500-8ed3-4bdf-8a39-a01bebede295';
+        const WRITE_CHAR_UUID = '3c9a3f00-8ed3-4bdf-8a39-a01bebede295';
+
+        let notifyingCharacteristic;
+
+        function log(message) {
+            const time = new Date().toISOString();
+            logElement.textContent += `[${time}] ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        async function connect() {
+            log('Requesting Bluetooth Device...');
+            device = await navigator.bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: [SERVICE_UUID]
+            });
+
+            log('Connecting to GATT Server...');
+            server = await device.gatt.connect();
+
+            log('Getting Service...');
+            service = await server.getPrimaryService(SERVICE_UUID);
+
+            log('Getting Characteristics...');
+            // Characteristics are accessed on-demand in the button handlers.
+            // This is fine for a simple test page.
+
+            log('Connected!');
+            connectButton.disabled = true;
+            disconnectButton.disabled = false;
+            characteristicsDiv.style.display = 'block';
+        }
+
+        async function disconnect() {
+            if (device && device.gatt.connected) {
+                // Stop notifications if they are active
+                if (notifyingCharacteristic) {
+                    try {
+                        await notifyingCharacteristic.stopNotifications();
+                        notifyingCharacteristic.removeEventListener('characteristicvaluechanged', handleNotifications);
+                        log('Notifications stopped.');
+                        stopNotifyButton.disabled = true;
+                        startNotifyButton.disabled = false;
+                    } catch (error) {
+                        log(`Error stopping notifications: ${error}`);
+                    }
+                }
+                device.gatt.disconnect();
+                log('Disconnected.');
+            }
+            connectButton.disabled = false;
+            disconnectButton.disabled = true;
+            characteristicsDiv.style.display = 'none';
+            // Reset value displays
+            staticValueSpan.textContent = 'Not read yet';
+            notifyValueSpan.textContent = 'Not read yet';
+            writeValueSpan.textContent = 'Not read yet';
+        }
+
+        async function readStatic() {
+            if (!service) {
+                log('Not connected to a GATT server.');
+                return;
+            }
+            try {
+                log('Reading Static Characteristic...');
+                const characteristic = await service.getCharacteristic(STATIC_CHAR_UUID);
+                const value = await characteristic.readValue();
+                const decoder = new TextDecoder('utf-8');
+                const valueString = decoder.decode(value);
+                staticValueSpan.textContent = valueString;
+                log(`Static Value: ${valueString}`);
+            } catch (error) {
+                log(`Error reading static characteristic: ${error}`);
+            }
+        }
+
+        async function readNotify() {
+            if (!service) {
+                log('Not connected to a GATT server.');
+                return;
+            }
+            try {
+                log('Reading Notifying Characteristic...');
+                const characteristic = await service.getCharacteristic(NOTIFY_CHAR_UUID);
+                const value = await characteristic.readValue();
+                const decoder = new TextDecoder('utf-8');
+                const valueString = decoder.decode(value);
+                notifyValueSpan.textContent = valueString;
+                log(`Notify Value: ${valueString}`);
+            } catch (error) {
+                log(`Error reading notifying characteristic: ${error}`);
+            }
+        }
+
+        async function readWrite() {
+            if (!service) {
+                log('Not connected to a GATT server.');
+                return;
+            }
+            try {
+                log('Reading Writable Characteristic...');
+                const characteristic = await service.getCharacteristic(WRITE_CHAR_UUID);
+                const value = await characteristic.readValue();
+                const decoder = new TextDecoder('utf-8');
+                const valueString = decoder.decode(value);
+                writeValueSpan.textContent = valueString;
+                log(`Write Value: ${valueString}`);
+            } catch (error) {
+                log(`Error reading writable characteristic: ${error}`);
+            }
+        }
+
+        async function startNotifications() {
+            if (!service) {
+                log('Not connected to a GATT server.');
+                return;
+            }
+            try {
+                log('Starting Notifications...');
+                const characteristic = await service.getCharacteristic(NOTIFY_CHAR_UUID);
+                notifyingCharacteristic = characteristic; // Store reference
+                characteristic.addEventListener('characteristicvaluechanged', handleNotifications);
+                await characteristic.startNotifications();
+                log('Notifications started.');
+                startNotifyButton.disabled = true;
+                stopNotifyButton.disabled = false;
+            } catch (error) {
+                log(`Error starting notifications: ${error}`);
+            }
+        }
+
+        async function stopNotifications() {
+            if (!service || !notifyingCharacteristic) {
+                log('No active notification subscription.');
+                return;
+            }
+            try {
+                log('Stopping Notifications...');
+                await notifyingCharacteristic.stopNotifications();
+                notifyingCharacteristic.removeEventListener('characteristicvaluechanged', handleNotifications);
+                log('Notifications stopped.');
+                stopNotifyButton.disabled = true;
+                startNotifyButton.disabled = false;
+            } catch (error) {
+                log(`Error stopping notifications: ${error}`);
+            }
+        }
+
+        function handleNotifications(event) {
+            const value = event.target.value;
+            const decoder = new TextDecoder('utf-8');
+            const valueString = decoder.decode(value);
+            notifyValueSpan.textContent = valueString;
+            log(`Notification received: ${valueString}`);
+        }
+
+        async function writeValue() {
+            if (!service) {
+                log('Not connected to a GATT server.');
+                return;
+            }
+            const inputValue = writeValueInput.value;
+            if (!inputValue) {
+                log('Please enter a value to write.');
+                return;
+            }
+            try {
+                log(`Writing value "${inputValue}" to Writable Characteristic...`);
+                const characteristic = await service.getCharacteristic(WRITE_CHAR_UUID);
+                const encoder = new TextEncoder();
+                await characteristic.writeValue(encoder.encode(inputValue));
+                log('Value written successfully.');
+                // Optionally, read it back to confirm
+                // await readWrite();
+            } catch (error) {
+                log(`Error writing to writable characteristic: ${error}`);
+            }
+        }
+
+        connectButton.addEventListener('click', connect);
+        disconnectButton.addEventListener('click', disconnect);
+        readStaticButton.addEventListener('click', readStatic);
+        readNotifyButton.addEventListener('click', readNotify);
+        readWriteButton.addEventListener('click', readWrite);
+        startNotifyButton.addEventListener('click', startNotifications);
+        stopNotifyButton.addEventListener('click', stopNotifications);
+        writeButton.addEventListener('click', writeValue);
+
+        // Handle device disconnect event (e.g., device goes out of range)
+        if (device) {
+            device.addEventListener('gattserverdisconnected', onDisconnected);
+        }
+        function onDisconnected(event) {
+            log('> Bluetooth Device disconnected');
+            disconnect(); // Update UI
+        }
+    </script>
+</body>
+</html>
